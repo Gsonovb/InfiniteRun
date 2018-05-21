@@ -10,20 +10,28 @@ using System.Windows.Forms;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
+using System.Runtime.InteropServices;
 
 namespace InfiniteRun
 {
     public partial class frmMain : Form
     {
+        [DllImport("kernel32.dll")]
+        static extern bool GenerateConsoleCtrlEvent(int dwCtrlEvent, int dwProcessGroupId);
+
+        [DllImport("kernel32.dll")]
+        static extern bool SetConsoleCtrlHandler(IntPtr handlerRoutine, bool add);
+
+        [DllImport("kernel32.dll")]
+        static extern bool AttachConsole(int dwProcessId);
+        [DllImport("kernel32.dll")]
+        static extern bool FreeConsole();
         Process np = new Process();
         bool RunningFlag;
+        //private delegate void MessagePrintDelegate(String msg);
         private void btnRestart_Click(object sender, EventArgs e)
         {
-            if (np != null)
-            {
-                if (!np.HasExited) np.Kill();
-                np = null;
-            }
+            KillCmd();
         }
         private void btnStart_Click(object sender, EventArgs e)
         {
@@ -37,33 +45,37 @@ namespace InfiniteRun
             RunningFlag = false;
             ni.Icon = this.Icon;
             ni.Text = "InfiniteRun";
-            if (np != null)
-            {
-                if (!np.HasExited) np.Kill();
-                np = null;
-            }
+            KillCmd();
         }
         private void Exec()
         {
             try
             {
                 Process p = new Process();
-                p.StartInfo.FileName = tbCmd.Text.Substring(0, tbCmd.Text.IndexOf(".exe") + 4);
-                p.StartInfo.Arguments = tbCmd.Text.Substring(tbCmd.Text.IndexOf(".exe") + 4, tbCmd.Text.Length - p.StartInfo.FileName.Length);
+                p.StartInfo.FileName = "cmd.exe";
+                p.StartInfo.Arguments = "/c " + tbCmd.Text;
                 p.StartInfo.UseShellExecute = false;
                 p.StartInfo.RedirectStandardInput = true;
                 p.StartInfo.RedirectStandardOutput = true;
                 p.StartInfo.RedirectStandardError = true;
                 p.StartInfo.CreateNoWindow = true;
                 p.OutputDataReceived += new DataReceivedEventHandler(OutputReceived);
-                ni.Icon = System.Drawing.Icon.ExtractAssociatedIcon(p.StartInfo.FileName);
-                ni.Text = "InfiniteRun - " + System.IO.Path.GetFileName(p.StartInfo.FileName);
+
+                if (tbCmd.Text.IndexOf(".exe") > 0)
+                {
+                    String _ExeFileName;
+                    _ExeFileName = tbCmd.Text.Substring(0, tbCmd.Text.IndexOf(".exe") + 4);
+                    ni.Text = "InfiniteRun - " + System.IO.Path.GetFileName(_ExeFileName);
+                    if (File.Exists(_ExeFileName)) ni.Icon = System.Drawing.Icon.ExtractAssociatedIcon(_ExeFileName);
+                }
+                
                 RunningFlag = true;
                 np = p;
                 p.Start();
                 p.BeginOutputReadLine();
                 p.WaitForExit();
                 p.Close();
+                Thread.Sleep(1000);
                 np = null;
                 this.BeginInvoke(new Action(() => { this.tbOutput.AppendText(System.Environment.NewLine + "Process Termainated." + System.Environment.NewLine + System.Environment.NewLine); }));
                 if (RunningFlag == true)
@@ -100,6 +112,23 @@ namespace InfiniteRun
                 ni.Visible = true;
             }
         }
+
+        private void KillCmd()
+        {
+            if (np != null)
+            {
+                if (!np.HasExited)
+                {
+                    AttachConsole(np.Id);
+                    SetConsoleCtrlHandler(IntPtr.Zero, true);
+                    GenerateConsoleCtrlEvent(0, 0);
+                    Thread.Sleep(10);
+                    SetConsoleCtrlHandler(IntPtr.Zero, false);
+                    FreeConsole();
+                    np = null;
+                }
+            }
+        }
         private void ni_DoubleClick(object sender, EventArgs e)
         {
             if (this.WindowState == FormWindowState.Minimized)
@@ -107,7 +136,6 @@ namespace InfiniteRun
                 this.Show();
                 this.ShowInTaskbar = true;
                 this.WindowState = FormWindowState.Normal;
-                //this.Activate();
                 ni.Visible = false;
             }
         }
